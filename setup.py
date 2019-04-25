@@ -2,10 +2,10 @@
 import io
 import os
 import sys
+from distutils.util import convert_path
 from fnmatch import fnmatchcase
 
 from setuptools import setup, find_packages
-from distutils.util import convert_path
 
 # Provided as an attribute, so you can append to these instead
 # of replicating them:
@@ -105,14 +105,14 @@ long_description = io.open('README.rst', encoding='utf-8').read()
 version = __import__('netwell').__version__
 
 METADATA = dict(
-    name='netwell',
+    name='netwell-ng',
     version=version,
     author='Raymond Penners',
     author_email='raymond.penners@intenct.nl',
     description='Checker to determine if all is well',
     long_description=long_description,
-    url='http://github.com/pennersr/netwell',
-    keywords='network ping check test',
+    url='https://github.com/kravietz/netwell-ng',
+    keywords='network ping check test dns url availability',
     tests_require=[],
     install_requires=[
         'requests >= 2.0.0',
@@ -130,6 +130,8 @@ METADATA = dict(
         'Programming Language :: Python',
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
     ],
     packages=find_packages(exclude=['example']),
     package_data=package_data,
