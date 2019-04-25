@@ -4,6 +4,7 @@ import sys
 from contextlib import contextmanager
 import subprocess
 
+import dns.resolver
 import requests
 from urllib.parse import urlparse
 from dateutil.parser import parse as parse_date
@@ -217,20 +218,20 @@ class DNS(Checker):
 
     def __init__(self, *netlocs):
         self.netlocs = netlocs
+        self.resolver = dns.resolver.Resolver()
 
-    def resolves_to(self, ip):
+    def resolves_to(self, ip, record='A'):
         for netloc in self.netlocs:
-            self._resolves_to(netloc, ip)
+            self._resolves_to(netloc, ip, record)
 
-    def _resolves_to(self, netloc, ip):
+    def _resolves_to(self, netloc, ip, record):
         with rule(
                 'Checking that {netloc} resolves to {ip}'.format(
                     netloc=netloc,
                     ip=ip)) as outcome:
-            gip = os.popen("dig @8.8.8.8 +short {0} | tail -1".format(
-                netloc)).read().strip()
-            if gip != ip:
-                outcome.fail('got ' + gip)
+            answer = self.resolver.query(netloc, record)
+            if ip not in [str(x) for x in answer]:
+                outcome.fail('got ' + str(list(answer)))
 
 
 class Path(Checker):
