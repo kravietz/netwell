@@ -1,14 +1,14 @@
 import os
 import re
+import subprocess
 import sys
 from contextlib import contextmanager
-import subprocess
+from datetime import date, timedelta, datetime
+from urllib.parse import urlparse
 
 import dns.resolver
 import requests
-from urllib.parse import urlparse
 from dateutil.parser import parse as parse_date
-from datetime import date, timedelta, datetime
 
 
 class RuleFailedException(Exception):
@@ -108,7 +108,7 @@ class URL(Checker):
     def redirects_to(self, to_url):
         with rule(
                 'Checking that {0} redirects to {1}'.format(
-                self.url, to_url)) as outcome:
+                    self.url, to_url)) as outcome:
             response = self._fetch()
             if to_url != response.url:
                 outcome.fail(
@@ -189,8 +189,8 @@ class Port(Checker):
                    ' -servername {netloc}'
                    ' -connect {netloc}:{port} </dev/null'
                    ' 2>/dev/null | openssl x509 -noout -dates'.format(
-                       netloc=self.netloc,
-                       port=self.port))
+                netloc=self.netloc,
+                port=self.port))
             not_before = None
             not_after = None
             with os.popen(cmd) as f:
@@ -254,10 +254,10 @@ class Path(Checker):
         assert not mb or not gb
         if mb is not None:
             unit = 'MB'
-            bytes_per_unit = 1024**2
+            bytes_per_unit = 1024 ** 2
         else:
             unit = 'GB'
-            bytes_per_unit = 1024**3
+            bytes_per_unit = 1024 ** 3
         value = mb or gb
         with rule(
                 'Checking that {path} has {value} {unit} free space'.format(
@@ -286,10 +286,10 @@ class Repo(Checker):
             if not os.path.exists(os.path.join(self.path, '.git')):
                 outcome.fail('No repository present')
             if not self._run_exit_0([
-                    'git', 'diff', '--exit-code']):
+                'git', 'diff', '--exit-code']):
                 outcome.fail('Local unstaged changes found')
             if not self._run_exit_0([
-                    'git', 'diff', '--cached', '--exit-code']):
+                'git', 'diff', '--cached', '--exit-code']):
                 outcome.fail('Uncommitted, staged changes found')
             if self._has_untracked():
                 outcome.fail('Untracked files found')
