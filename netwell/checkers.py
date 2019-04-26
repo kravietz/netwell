@@ -1,14 +1,18 @@
 import os
 import re
+import socket
+import ssl
 import subprocess
 import sys
 from contextlib import contextmanager
-from datetime import date, timedelta, datetime
+from datetime import timedelta, datetime
+from typing import NoReturn, Optional
 from urllib.parse import urlparse
 
 import dns.resolver
 import requests
-from dateutil.parser import parse as parse_date
+from dns.exception import DNSException
+from requests import Response
 
 
 class RuleFailedException(Exception):
@@ -17,12 +21,12 @@ class RuleFailedException(Exception):
 
 class Output:
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.quiet = False
         self.line = ''
         self.line_error = False
 
-    def info(self, text):
+    def info(self, text) -> None:
         if not self.quiet or self.line_error:
             sys.stdout.write(self.line)
             self.line = ''
@@ -31,11 +35,11 @@ class Output:
         else:
             self.line += text
 
-    def error(self, text):
+    def error(self, text) -> None:
         self.line_error = True
         self.info(text)
 
-    def eol(self):
+    def eol(self) -> None:
         self.info('\n')
         self.line_error = False
         self.line = ''
@@ -46,7 +50,7 @@ output = Output()
 
 class Result:
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.failures = 0
         self.checks = 0
 
@@ -56,18 +60,18 @@ result = Result()
 
 class Outcome:
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.failed = False
         self.message = None
 
-    def fail(self, message=None):
+    def fail(self, message=None) -> NoReturn:
         self.message = message
         self.failed = True
         raise RuleFailedException()
 
 
 @contextmanager
-def rule(description):
+def rule(description) -> None:
     output.info(description + '... ')
     outcome = Outcome()
     try:
@@ -96,11 +100,11 @@ class Checker:
 
 class URL(Checker):
 
-    def __init__(self, url):
+    def __init__(self, url) -> None:
         self.url = url
         self.response = None
 
-    def _fetch(self):
+    def _fetch(self) -> Response:
         if not self.response:
             self.response = requests.get(self.url, timeout=10)
         return self.response
@@ -116,7 +120,7 @@ class URL(Checker):
                         url=response.url))
         return self
 
-    def title_matches(self, pattern):
+    def title_matches(self, pattern) -> object:
         with rule(
                 'Checking that {url} title matches "{pattern}"'.format(
                     url=self.url,
@@ -130,7 +134,7 @@ class URL(Checker):
                         title=title))
         return self
 
-    def has_header(self, header, value=None):
+    def has_header(self, header, value=None) -> object:
         """
         Checks if the specified header is present. In case a value is
         provided, it is checked if the value matches.
@@ -152,7 +156,7 @@ class URL(Checker):
                     outcome.fail('not found')
         return self
 
-    def check_response(self, func):
+    def check_response(self, func) -> object:
         with rule(
                 'Checking that {url} passes {func}'.format(
                     url=self.url,
@@ -161,7 +165,7 @@ class URL(Checker):
             func(response, outcome)
         return self
 
-    def _get_netloc_port(self):
+    def _get_netloc_port(self) -> tuple:
         parts = urlparse(self.url)
         netloc, _, port = parts.netloc.partition(':')
         if not port:
@@ -173,65 +177,122 @@ class URL(Checker):
 
 
 class Port(Checker):
+    """
+    Check that port is open at a server
 
-    def __init__(self, netloc, port):
-        self.netloc = netloc
-        self.port = port
+        Port('webcookies.org', 443)
 
-    def ssl_valid_for(self, *, days):
-        with rule(
-                'Checking that SSL at {netloc}:{port}'
-                ' is valid for at least {days} days'.format(
-                    netloc=self.netloc,
-                    port=self.port,
-                    days=days)) as outcome:
-            cmd = ('openssl s_client'
-                   ' -servername {netloc}'
-                   ' -connect {netloc}:{port} </dev/null'
-                   ' 2>/dev/null | openssl x509 -noout -dates'.format(
-                netloc=self.netloc,
-                port=self.port))
-            not_before = None
-            not_after = None
-            with os.popen(cmd) as f:
-                for line in f.readlines():
-                    key, _, value = line.strip().partition('=')
-                    if key in ['notBefore', 'notAfter']:
-                        value = parse_date(value).date()
-                        if key == 'notBefore':
-                            not_before = value
-                        else:
-                            not_after = value
-            if not not_before or not not_after:
-                outcome.fail('Unable to determine SSL dates')
-            now = date.today()
-            if now < not_before:
-                outcome.fail('Not valid before {}'.format(
-                    not_before))
-            if now + timedelta(days=days) > not_after:
-                outcome.fail('Not valid after {}'.format(
-                    not_after))
-        return self
+    """
+
+    def __init__(self, netloc: str, port: int) -> None:
+        self.netloc: str = netloc
+        self.port: int = port
+        self.context: ssl.SSLContext = ssl.create_default_context()
+        self.cert: dict = {}
+        socket.setdefaulttimeout(5.0)
+
+    @staticmethod
+    def _date(d: str) -> Optional[datetime]:
+        try:
+            # try decoding locale representation first
+            return datetime.strptime(d, '%c')
+        except ValueError:
+            try:
+                # try 'Jan 30 23:00:15 2019 GMT' representation
+                return datetime.strptime(d, '%b %d %H:%M:%S %Y %Z')
+            except ValueError:
+                return None
+
+    def is_open(self) -> object:
+        """
+        Check that the given port is open at given host
+
+            Port('webcookies.org', 443).is_open()
+
+        This can be used to test various non-HTTP and non-TLS protocols
+
+        """
+        with rule(f'Checking that port is open at {self.netloc}:{self.port}') as outcome:
+            try:
+                with socket.create_connection((self.netloc, self.port)) as sock:
+                    return self
+            except OSError as e:
+                outcome.fail(f'Connection failed: {e}')
+
+    def ssl_valid_for(self, *, days: int) -> object:
+        """
+        Check that TLS server is operational at given host and port, and certificate is valid for given number of days
+
+            Port('webcookies.org', 443).ssl_valid_for(days=10)
+
+        """
+        with rule(f'Checking that TLS at {self.netloc}:{self.port} is valid for at least {days} days') as outcome:
+
+            try:
+                with socket.create_connection((self.netloc, self.port)) as sock:
+                    with self.context.wrap_socket(sock, server_hostname=self.netloc) as ssl_sock:
+                        self.cert = ssl_sock.getpeercert()
+            except ssl.SSLError as e:
+                outcome.fail(f'TLS error: {e}')
+            else:
+                not_before = self._date(self.cert.get('notBefore'))
+                not_after = self._date(self.cert.get('notAfter'))
+
+                now = datetime.now()
+
+                if not not_before or not not_after:
+                    outcome.fail('Unable to determine SSL dates')
+
+                if now < not_before:
+                    outcome.fail('Not valid before {}'.format(
+                        not_before))
+
+                if now + timedelta(days=days) > not_after:
+                    outcome.fail('Not valid after {}'.format(
+                        not_after))
+
+            return self
 
 
 class DNS(Checker):
+    """
+    Perform various DNS-related sanity checks. Initialize the class with a list of hostnames:
 
-    def __init__(self, *netlocs):
+        DNS('example.com', 'www.example.com')
+
+    """
+
+    def __init__(self, *netlocs) -> None:
         self.netlocs = netlocs
         self.resolver = dns.resolver.Resolver()
 
+    def resolves(self):
+        """
+        Check if the hostnames resolve to any A record
+
+            DNS('example.com').resolves()
+        """
+        for netloc in self.netlocs:
+            self._resolves_to(netloc, None, 'A')
+
     def resolves_to(self, ip, record='A'):
+        """
+        Check if the hostnames resolve to specified A record
+
+            DNS('example.com').resolves_to('127.0.0.1')
+        """
         for netloc in self.netlocs:
             self._resolves_to(netloc, ip, record)
 
     def _resolves_to(self, netloc, ip, record):
-        with rule(
-                'Checking that {netloc} resolves to {ip}'.format(
-                    netloc=netloc,
-                    ip=ip)) as outcome:
-            answer = self.resolver.query(netloc, record)
-            if ip not in [str(x) for x in answer]:
-                outcome.fail('got ' + str(list(answer)))
+        with rule(f'Checking that {netloc} resolves to {ip}') as outcome:
+            try:
+                answer = self.resolver.query(netloc, record)
+            except DNSException as e:
+                outcome.fail(f'got {e}')
+            else:
+                if ip and ip not in [str(x) for x in answer]:
+                    outcome.fail(f'got str(list(answer))')
 
 
 class Path(Checker):
