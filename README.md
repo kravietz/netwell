@@ -1,20 +1,20 @@
-===================
-Welcome to Netwell!
-===================
+# Netwell-ng
 
-Installation
-============
+This is a partial rewrite of the original [netwell](https://github.com/pennersr/netwell)
+by Raymond Penners that improves on [security](https://github.com/pennersr/netwell/issues/8)
+and avoids usage of external programs, reimplementing some checks in pure Python.
+
+## Installation
 
 Python 3 is required::
 
-   $ pip install netwell
+    $ pip install netwell-ng
 
 
-Quickstart
-==========
+## Quickstart
 
 Given a netwell checkup file `checks.py`:
-::
+
 
     from netwell.checkers import URL, DNS, Port, Repo
 
@@ -37,7 +37,6 @@ Given a netwell checkup file `checks.py`:
 
 Then, run:
 
-::
 
     $ netwell /some/where/checks.py
     Checking that http://fsf.org redirects to http://www.fsf.org/... OK
