@@ -48,6 +48,11 @@ class Output:
 output = Output()
 
 
+def set_output(out: Output):
+    global output
+    output = out
+
+
 class Result:
 
     def __init__(self) -> None:
@@ -100,38 +105,29 @@ class Checker:
 
 class URL(Checker):
 
-    def __init__(self, url) -> None:
-        self.url = url
-        self.response = None
+    def __init__(self, url: str) -> None:
+        self.url: str = url
+        self.response: Optional[Response] = None
 
     def _fetch(self) -> Response:
         if not self.response:
-            self.response = requests.get(self.url, timeout=10)
+            self.response = requests.get(self.url, timeout=5)
         return self.response
 
-    def redirects_to(self, to_url):
-        with rule(
-                'Checking that {0} redirects to {1}'.format(
-                    self.url, to_url)) as outcome:
+    def redirects_to(self, to_url) -> object:
+        with rule(f'Checking that {self.url} redirects to {to_url}') as outcome:
             response = self._fetch()
             if to_url != response.url:
-                outcome.fail(
-                    '{url} encountered'.format(
-                        url=response.url))
+                outcome.fail(f'{response.url} encountered')
         return self
 
     def title_matches(self, pattern) -> object:
-        with rule(
-                'Checking that {url} title matches "{pattern}"'.format(
-                    url=self.url,
-                    pattern=pattern)) as outcome:
+        with rule(f'Checking that {self.url} title matches "{pattern}"') as outcome:
             response = self._fetch()
-            m = re.search('title>(?P<title>[^<]+)</ti', response.text)
+            m = re.search(r'title>(?P<title>[^<]+)</ti', response.text)
             title = m.group('title').strip()
             if not re.search(pattern, title, re.I):
-                outcome.fail(
-                    'got "{title}"'.format(
-                        title=title))
+                outcome.fail(f'got "{title}"')
         return self
 
     def has_header(self, header, value=None) -> object:
@@ -139,28 +135,22 @@ class URL(Checker):
         Checks if the specified header is present. In case a value is
         provided, it is checked if the value matches.
         """
-        description = 'Checking that {url} has header "{header}"'
+        description = f'Checking that {self.url} has header "{header}"'
         if value is not None:
-            description += ': "{value}"'
-        with rule(description.format(
-                url=self.url,
-                header=header,
-                value=value)) as outcome:
+            description += f': "{value}"'
+        with rule(description) as outcome:
             response = self._fetch()
             if value is not None:
                 actual_value = response.headers.get(header, '')
                 if actual_value != value:
-                    outcome.fail('got {}'.format(actual_value))
+                    outcome.fail(f'got {actual_value}')
             else:
                 if header not in response.headers:
                     outcome.fail('not found')
         return self
 
     def check_response(self, func) -> object:
-        with rule(
-                'Checking that {url} passes {func}'.format(
-                    url=self.url,
-                    func=func.__name__)) as outcome:
+        with rule(f'Checking that {self.url} passes {func.__name__}') as outcome:
             response = self._fetch()
             func(response, outcome)
         return self
@@ -266,16 +256,17 @@ class DNS(Checker):
         self.netlocs = netlocs
         self.resolver = dns.resolver.Resolver()
 
-    def resolves(self):
+    def resolves(self, record: str = 'A'):
         """
-        Check if the hostnames resolve to any A record
+        Check if the hostnames resolve to any DNS record of given type (default: A)
 
             DNS('example.com').resolves()
+            DNS('example.com', 'AAAA').resolves()
         """
         for netloc in self.netlocs:
-            self._resolves_to(netloc, None, 'A')
+            self._resolves_to(netloc, None, record)
 
-    def resolves_to(self, ip, record='A'):
+    def resolves_to(self, ip: str, record: str = 'A') -> None:
         """
         Check if the hostnames resolve to specified A record
 
